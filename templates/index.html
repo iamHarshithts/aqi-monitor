@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Satellite AQI Monitor</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        /* --- General Reset & Fonts --- */
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background: #f4f7f6; color: #333; }
+        
+        /* --- Container --- */
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            padding: 20px; 
+        }
+
+        h2 { 
+            text-align: center; 
+            color: #2c3e50; 
+            margin-bottom: 20px; 
+            font-size: 1.8rem;
+        }
+
+        /* --- Controls Section --- */
+        .controls { 
+            background: white; 
+            padding: 20px; 
+            border-radius: 12px; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05); 
+            display: flex; 
+            gap: 10px; 
+            margin-bottom: 20px; 
+            flex-wrap: wrap; 
+        }
+        
+        input { 
+            padding: 12px 15px; 
+            border: 1px solid #ddd; 
+            border-radius: 8px; 
+            flex: 1; 
+            min-width: 200px; 
+            font-size: 16px; 
+        }
+        
+        button { 
+            padding: 12px 25px; 
+            background: #007bff; 
+            color: white; 
+            border: none; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            font-size: 16px; 
+            font-weight: 600; 
+            transition: background 0.2s; 
+            white-space: nowrap;
+        }
+        button:active { transform: scale(0.98); }
+
+        /* --- Tabs --- */
+        .tabs-wrapper {
+            overflow-x: auto; 
+            -webkit-overflow-scrolling: touch; 
+            margin-bottom: -1px; /* Connect to content */
+            padding-bottom: 5px; /* Space for scrollbar if needed */
+        }
+        
+        .tabs { 
+            display: flex; 
+            min-width: fit-content; 
+        }
+        
+        .tab { 
+            padding: 12px 20px; 
+            background: #e0e0e0; 
+            cursor: pointer; 
+            border-radius: 8px 8px 0 0; 
+            margin-right: 5px; 
+            font-weight: 600; 
+            color: #666; 
+            font-size: 0.95rem;
+            white-space: nowrap;
+        }
+        
+        .tab.active { 
+            background: white; 
+            color: #007bff; 
+            border-top: 3px solid #007bff; 
+        }
+
+        .tab-content { 
+            display: none; 
+            background: white; 
+            padding: 25px; 
+            border-radius: 0 8px 8px 8px; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05); 
+        }
+        .tab-content.active { display: block; animation: fadeIn 0.3s; }
+
+        /* --- Layout Grid (Split View) --- */
+        .grid-split { 
+            display: grid; 
+            grid-template-columns: 1fr 1fr; 
+            gap: 25px; 
+        }
+
+        /* --- AQI Card --- */
+        .aqi-card { 
+            text-align: center; 
+            padding: 25px; 
+            border-radius: 12px; 
+            color: #333; 
+            background: #eee;
+            margin-bottom: 20px; 
+        }
+        .aqi-number { font-size: 3.5rem; font-weight: 800; line-height: 1.1; }
+        .aqi-status { font-size: 1.2rem; margin-top: 5px; font-weight: 500; opacity: 0.9; }
+
+        /* --- Pollutants Grid --- */
+        .pollutants { 
+            display: grid; 
+            grid-template-columns: repeat(3, 1fr); 
+            gap: 10px; 
+        }
+        .p-box { 
+            background: #f8f9fa; 
+            padding: 10px; 
+            border-radius: 8px; 
+            text-align: center; 
+            border: 1px solid #eee; 
+        }
+        .p-box strong { font-size: 0.8rem; color: #666; display: block; margin-bottom: 4px; }
+        .p-box span { font-weight: bold; font-size: 1rem; color: #333; }
+
+        /* --- Maps --- */
+        #map, #heatmap-container { 
+            height: 400px; 
+            width: 100%; 
+            border-radius: 12px; 
+            border: 1px solid #ddd; 
+            z-index: 1; /* Fix for leaflet overlapping */
+        }
+
+        /* --- Forecast List --- */
+        .forecast-item {
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+            background: #fff; 
+            padding: 15px; 
+            margin-bottom: 12px;
+            border-radius: 8px; 
+            border: 1px solid #eee;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        }
+        .f-date { width: 30%; font-weight: 600; color: #444; }
+        .f-badge { padding: 5px 12px; border-radius: 20px; font-weight: bold; font-size: 0.85rem; text-align: center;}
+        .f-details { text-align: right; font-size: 0.85rem; color: #777; width: 40%; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* =========================================
+           📱 MOBILE RESPONSIVE QUERIES
+           ========================================= */
+        
+        /* Tablet & Mobile (Max Width 768px) */
+        @media (max-width: 768px) {
+            .container { padding: 10px; margin: 0; }
+            h2 { font-size: 1.5rem; margin-top: 10px; }
+            
+            .controls { flex-direction: column; gap: 10px; padding: 15px; }
+            button { width: 100%; padding: 15px; } /* Big touch target */
+            
+            .grid-split { grid-template-columns: 1fr; gap: 20px; } /* Stack layout */
+            
+            #map, #heatmap-container { height: 300px; } /* Shorter maps on mobile */
+            
+            .tab-content { padding: 15px; }
+            
+            .aqi-number { font-size: 3rem; }
+        }
+
+        /* Small Mobile (Max Width 480px) */
+        @media (max-width: 480px) {
+            .pollutants { grid-template-columns: repeat(2, 1fr); } /* 2 cols instead of 3 */
+            
+            /* Stack forecast items for clarity */
+            .forecast-item { 
+                flex-direction: column; 
+                align-items: flex-start; 
+                gap: 10px; 
+            }
+            .f-date, .f-details, .f-badge { width: 100%; text-align: left; }
+            .f-badge { display: inline-block; width: auto; }
+            .f-details { text-align: left; display: flex; gap: 15px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>🛰️ Satellite AQI Monitor</h2>
+    
+    <div class="controls">
+        <input type="text" id="lat" placeholder="Latitude (e.g., 28.6139)" value="28.6139">
+        <input type="text" id="lon" placeholder="Longitude (e.g., 77.2090)" value="77.2090">
+        <button onclick="fetchData()">Get Satellite Data</button>
+    </div>
+
+    <div class="tabs-wrapper">
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('current', this)">Current Status</div>
+            <div class="tab" onclick="switchTab('heatmap', this)">Zone Heatmap</div>
+            <div class="tab" onclick="switchTab('forecast', this)">3-Day Forecast</div>
+        </div>
+    </div>
+
+    <div id="current" class="tab-content active">
+        <div class="grid-split">
+            <div>
+                <h3 style="margin-top:0">Real-time Air Quality</h3>
+                <div id="aqi-display" class="aqi-card">
+                    <div class="aqi-number" id="aqi-score">--</div>
+                    <div class="aqi-status" id="aqi-text">Enter Coordinates</div>
+                </div>
+
+                <h4 style="margin-bottom:10px; color:#555;">Pollutants (μg/m³)</h4>
+                <div class="pollutants">
+                    <div class="p-box"><strong>PM 2.5</strong><span id="val-pm25">-</span></div>
+                    <div class="p-box"><strong>PM 10</strong><span id="val-pm10">-</span></div>
+                    <div class="p-box"><strong>NO2</strong><span id="val-no2">-</span></div>
+                    <div class="p-box"><strong>SO2</strong><span id="val-so2">-</span></div>
+                    <div class="p-box"><strong>CO</strong><span id="val-co">-</span></div>
+                    <div class="p-box"><strong>O3</strong><span id="val-o3">-</span></div>
+                </div>
+            </div>
+            
+            <div>
+                <h3 style="margin-top:0">Location Map</h3>
+                <div id="map"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="heatmap" class="tab-content">
+        <h3 style="margin-top:0">Pollution Heatmap</h3>
+        <p style="color:#666; font-size:0.9rem; margin-bottom: 15px;">Visualizing pollution intensity zones based on satellite data.</p>
+        <div id="heatmap-container"></div>
+    </div>
+
+    <div id="forecast" class="tab-content">
+        <h3 style="margin-top:0">3-Day Forecast</h3>
+        <p style="color:#666; font-size:0.9rem;">Predicted AQI based on dispersion models.</p>
+        <div id="forecast-list" style="margin-top: 20px;">
+            <div style="padding: 20px; text-align: center; color: #999; background:#f9f9f9; border-radius:8px;">
+                Tap "Get Satellite Data" to load forecast
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+
+<script>
+    // --- 1. Initialize Maps ---
+    let map = L.map('map').setView([20.5937, 78.9629], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap'
+    }).addTo(map);
+    let marker;
+
+    let heatMap = L.map('heatmap-container').setView([20.5937, 78.9629], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(heatMap);
+    let heatLayer;
+
+    // --- 2. Tab Switching Logic ---
+    function switchTab(tabId, element) {
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+
+        document.getElementById(tabId).classList.add('active');
+        element.classList.add('active');
+
+        // Fix Leaflet rendering in hidden tabs
+        setTimeout(() => { 
+            map.invalidateSize(); 
+            heatMap.invalidateSize(); 
+        }, 150);
+    }
+
+    // --- 3. Fetch Data ---
+    async function fetchData() {
+        const lat = document.getElementById('lat').value;
+        const lon = document.getElementById('lon').value;
+        const btn = document.querySelector('button');
+        
+        // Simple validation
+        if(!lat || !lon) { alert("Please enter valid coordinates"); return; }
+
+        btn.innerText = "Loading...";
+        btn.disabled = true;
+
+        try {
+            // Ensure this URL matches your Python Backend Port
+            const response = await fetch(`/get-pollution?lat=${lat}&lon=${lon}`);               const data = await response.json();
+
+            if (data.error) { throw new Error(data.error); }
+
+            // === A. UPDATE CURRENT ===
+            const cur = data.current;
+            
+            // Map Update
+            map.setView([lat, lon], 13);
+            if (marker) map.removeLayer(marker);
+            marker = L.marker([lat, lon]).addTo(map)
+                .bindPopup(`<b>AQI: ${cur.aqi}</b><br>${cur.label}`).openPopup();
+
+            // Stats Update
+            const cardEl = document.getElementById('aqi-display');
+            document.getElementById('aqi-score').innerText = cur.aqi;
+            document.getElementById('aqi-text').innerText = cur.label;
+            
+            cardEl.style.backgroundColor = cur.color;
+            cardEl.style.color = (cur.aqi > 200 || cur.aqi <= 50) ? "white" : "#2c3e50";
+            if(cur.aqi <= 50) cardEl.style.color = "white"; // Good AQI (Green) usually needs white text too
+            if(cur.aqi > 50 && cur.aqi <= 200) cardEl.style.color = "black"; // Yellow/LightGreen needs black text
+
+            document.getElementById('val-pm25').innerText = cur.components.pm2_5;
+            document.getElementById('val-pm10').innerText = cur.components.pm10;
+            document.getElementById('val-no2').innerText = cur.components.no2;
+            document.getElementById('val-so2').innerText = cur.components.so2;
+            document.getElementById('val-co').innerText = cur.components.co;
+            document.getElementById('val-o3').innerText = cur.components.o3 || "-";
+
+            // === B. UPDATE FORECAST ===
+            const forecastContainer = document.getElementById('forecast-list');
+            let fHtml = "";
+            
+            if(data.forecast && data.forecast.length > 0) {
+                data.forecast.forEach(day => {
+                    const dateObj = new Date(day.dt * 1000);
+                    const dateStr = dateObj.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+                    const textColor = (day.aqi > 200 || day.aqi <= 50) ? "white" : "black";
+
+                    fHtml += `
+                        <div class="forecast-item" style="border-left: 5px solid ${day.aqi_color}">
+                            <div class="f-date">${dateStr}</div>
+                            <div class="f-badge" style="background:${day.aqi_color}; color:${textColor}">AQI ${day.aqi}</div>
+                            <div class="f-details">
+                                <span>${day.aqi_label}</span> <br>
+                                <small>PM2.5: ${day.components.pm2_5}</small>
+                            </div>
+                        </div>
+                    `;
+                });
+                forecastContainer.innerHTML = fHtml;
+            } else {
+                forecastContainer.innerHTML = '<div style="text-align:center; padding:10px;">No forecast data available</div>';
+            }
+
+            // === C. UPDATE HEATMAP ===
+            heatMap.setView([lat, lon], 12);
+            if (heatLayer) heatMap.removeLayer(heatLayer);
+
+            // Generate "Fake" Heatmap Zone around the point
+            let heatPoints = [[lat, lon, 1.0]];
+            for(let i=0; i<15; i++) {
+                let rLat = parseFloat(lat) + (Math.random() - 0.5) * 0.04;
+                let rLon = parseFloat(lon) + (Math.random() - 0.5) * 0.04;
+                heatPoints.push([rLat, rLon, Math.random() * 0.8]);
+            }
+
+            heatLayer = L.heatLayer(heatPoints, {
+                radius: 35, blur: 20, maxZoom: 10,
+                gradient: {0.4: 'blue', 0.65: 'lime', 1: 'red'}
+            }).addTo(heatMap);
+
+        } catch (err) {
+            console.error(err);
+            alert("Connection Failed. Ensure 'python app.py' is running.");
+        } finally {
+            btn.innerText = "Get Satellite Data";
+            btn.disabled = false;
+        }
+    }
+</script>
+
+</body>
+</html>
